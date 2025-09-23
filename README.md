@@ -2,8 +2,8 @@
 
 A Node.js Express backend API that serves as the central data layer for math worksheet applications. This backend is designed as part of a **decoupled architecture** that can seamlessly serve multiple frontend applications including:
 
-- **math-worksheet-vue** - Vue.js frontend implementation
-- **math-worksheet-react** - React.js frontend implementation
+- **[math-worksheet-vue](https://github.com/nishanajihah/math-worksheet-vue)** - Vue.js implementation
+- **[math-worksheet-react](https://github.com/nishanajihah/math-worksheet-react)** - React.js implementation
 
 ## Architecture Overview
 
@@ -107,8 +107,8 @@ math-worksheet-backend/
 
 This backend serves the following frontend applications:
 
-- **[math-worksheet-vue](https://github.com/yourusername/math-worksheet-vue)** - Vue.js implementation
-- **[math-worksheet-react](https://github.com/yourusername/math-worksheet-react)** - React.js implementation
+- **[math-worksheet-vue](https://github.com/nishanajihah/math-worksheet-vue)** - Vue.js implementation
+- **[math-worksheet-react](https://github.com/nishanajihah/math-worksheet-react)** - React.js implementation
 
 Both frontends consume the same API endpoints, ensuring consistent functionality across different frameworks.
 
