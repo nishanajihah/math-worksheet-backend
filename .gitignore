@@ -57,3 +57,8 @@ Desktop.ini
 .git/
 *.patch
 *.diff
+
+# Vercel
+.vercel/
+*.vercel
+.env.production
