@@ -19,7 +19,7 @@ const questionsAndAnswers = [
       { id: 'q6', question: '445', correctAnswer: '450', choices: ['450', '440', '500'] },
       { id: 'q7', question: '45', correctAnswer: '50', choices: ['50', '45', '40'] },
       { id: 'q8', question: '19', correctAnswer: '20', choices: ['20', '10', '19'] },
-      { id: 'q9', question: '0', correctAnswer: '0', choices: ['10', '0'] },
+      { id: 'q9', question: '0', correctAnswer: '0', choices: ['10', '1', '0'] },
       { id: 'q10', question: '199', correctAnswer: '200', choices: ['190', '100', '200'] },
       { id: 'q11', question: '165', correctAnswer: '170', choices: ['160', '170', '150'] },
       { id: 'q12', question: '999', correctAnswer: '1000', choices: ['990', '1000', '909'] }
