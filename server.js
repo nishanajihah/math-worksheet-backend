@@ -26,7 +26,17 @@ const questionsAndAnswers = [
 ];
 
 // middleware for every incoming request
-app.use(cors()); // request from our frontend
+const corsOptions = {
+      origin: [
+            'http://localhost:3000',
+            'http://localhost:5173',
+            'http://localhost:8080',
+            'https://math-worksheet-vue-xyz.vercel.app', // Replace with your Vue app URL
+            'https://math-worksheet-react-xyz.vercel.app' // Replace with your React app URL
+            ],
+      credentials: true
+};
+app.use(cors(corsOptions)); // request from our frontend
 app.use(express.json()); // read json data sent from frontend
 
 // API endpoint: GET /api/questions
