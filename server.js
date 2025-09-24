@@ -9,7 +9,7 @@ let highScores = [];
 let dailyStats = {
     requests: 0,
     lastReset: new Date().toDateString(),
-    limit: 100  // Reduced limit
+    limit: 100
 };
 
 // Questions data
@@ -28,19 +28,71 @@ const questionsAndAnswers = [
     { id: 'q12', question: '999', correctAnswer: '1000', choices: ['990', '1000', '909'] }
 ];
 
-// Middleware setup (order matters!)
-app.use(express.json({ limit: '10mb' }));
-app.use(cors({
-    origin: [
-        'http://localhost:3000',
-        'http://localhost:5173', 
-        'http://localhost:8080',
-        'https://math-worksheet-vue.vercel.app',
-        'https://math-worksheet-react.vercel.app'
-    ],
-    credentials: true,
-    maxAge: 3600 // Cache preflight for 1 hour
+// Pre-computed frontend questions (avoid processing on each request)
+const frontendQuestions = questionsAndAnswers.map(qa => ({
+    id: qa.id,
+    question: qa.question,
+    choices: qa.choices
 }));
+
+// Valid frontend origins (for strict validation)
+const VALID_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:5173', 
+    'http://localhost:8080',
+    'https://math-worksheet-vue.vercel.app',
+    'https://math-worksheet-react.vercel.app'
+];
+
+// Middleware: Validate frontend request
+const validateFrontendRequest = (req, res, next) => {
+    // Skip validation for health checks
+    if (req.path === '/health') {
+        return next();
+    }
+
+    // Check if request is from valid frontend
+    const origin = req.get('Origin') || req.get('Referer');
+    const userAgent = req.get('User-Agent') || '';
+
+    // Block obvious bots immediately
+    const botPatterns = [
+        'bot', 'crawler', 'spider', 'scraper', 'curl', 'wget', 'python',
+        'postman', 'insomnia', 'facebookexternalhit', 'twitterbot',
+        'googlebot', 'bingbot', 'slackbot', 'whatsapp', 'telegram'
+    ];
+
+    if (botPatterns.some(pattern => userAgent.toLowerCase().includes(pattern))) {
+        return res.status(403).end(); // Silent rejection for bots
+    }
+
+    // For API endpoints, require valid origin or proper headers
+    if (req.path.startsWith('/api')) {
+        const hasValidOrigin = origin && VALID_ORIGINS.some(validOrigin => 
+            origin.startsWith(validOrigin)
+        );
+        
+        const hasValidHeaders = req.get('Content-Type') || req.get('Accept');
+        
+        // Allow if either valid origin OR proper API headers (for direct testing)
+        if (!hasValidOrigin && !hasValidHeaders) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+    }
+
+    next();
+};
+
+// Minimal middleware setup
+app.use(express.json({ limit: '1mb' })); // Reduced limit
+app.use(cors({
+    origin: VALID_ORIGINS,
+    credentials: true,
+    maxAge: 3600
+}));
+
+// Apply frontend validation to all routes
+app.use(validateFrontendRequest);
 
 // Minimal logging to prevent overhead
 const logRequest = (req, res, next) => {
