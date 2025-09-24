@@ -247,7 +247,7 @@ const validateFrontendRequest = (req, res, next) => {
     }
 
     // Show status page for root path (when someone visits the backend URL)
-    if (req.path === '/') {
+    if (req.path === 'https://math-worksheet-backend.vercel.app/') {
         return showStatusPage(req, res);
     }
 
