@@ -43,8 +43,8 @@ const corsOptions = {
             'http://localhost:3000',
             'http://localhost:5173',
             'http://localhost:8080',
-            'https://math-worksheet-vue.vercel.app/', // Replace with your actual Vue app URL
-            'https://math-worksheet-react.vercel.app/' // Replace with your actual React app URL
+            'https://math-worksheet-vue.vercel.app/', // Replace with actual Vue app URL
+            'https://math-worksheet-react.vercel.app/' // Replace with actual React app URL
             ],
       credentials: true
 };
