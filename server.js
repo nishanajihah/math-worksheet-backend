@@ -31,13 +31,55 @@ const corsOptions = {
             'http://localhost:3000',
             'http://localhost:5173',
             'http://localhost:8080',
-            'https://math-worksheet-vue-xyz.vercel.app', // Replace with your Vue app URL
-            'https://math-worksheet-react-xyz.vercel.app' // Replace with your React app URL
+            'https://math-worksheet-vue-nishanajihah.vercel.app', // Replace with your actual Vue app URL
+            'https://math-worksheet-react-nishanajihah.vercel.app' // Replace with your actual React app URL
             ],
       credentials: true
 };
+
+// Security middleware - log and filter requests
+app.use((req, res, next) => {
+      console.log(`${new Date().toISOString()} - ${req.method} ${req.path} from ${req.get('Origin') || 'Unknown'}`);
+      
+      // Block requests to root path (reduce bot traffic)
+      if (req.path === '/' || req.path === '/favicon.ico') {
+            return res.status(404).json({ message: 'Not found' });
+      }
+      
+      next();
+});
+
 app.use(cors(corsOptions)); // request from our frontend
 app.use(express.json()); // read json data sent from frontend
+
+// Rate limiting for API endpoints
+const requestCounts = new Map();
+app.use('/api', (req, res, next) => {
+      const clientIP = req.ip || req.connection.remoteAddress;
+      const now = Date.now();
+      const windowMs = 60000; // 1 minute
+      const maxRequests = 30; // Max 30 requests per minute per IP
+      
+      if (!requestCounts.has(clientIP)) {
+            requestCounts.set(clientIP, []);
+      }
+      
+      const requests = requestCounts.get(clientIP);
+      const recentRequests = requests.filter(time => now - time < windowMs);
+      
+      if (recentRequests.length >= maxRequests) {
+            return res.status(429).json({ message: 'Too many requests' });
+      }
+      
+      recentRequests.push(now);
+      requestCounts.set(clientIP, recentRequests);
+      next();
+});
+
+// Health check endpoint for Vercel
+app.get('/health', (req, res) => {
+      res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
 
 // API endpoint: GET /api/questions
 
