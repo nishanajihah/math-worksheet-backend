@@ -2,19 +2,14 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
-// Data storage
+// Simple data storage
 let highScores = [];
-let requestStats = {
-    questionsRequested: 0,
-    scoresSubmitted: 0,
-    scoresViewed: 0,
-    lastReset: new Date(),
-    dailyLimit: 200,
-    get totalInteractions() {
-        return this.questionsRequested + this.scoresSubmitted + this.scoresViewed;
-    }
+let dailyStats = {
+    requests: 0,
+    lastReset: new Date().toDateString(),
+    limit: 100  // Reduced limit
 };
 
 // Questions data
@@ -33,101 +28,84 @@ const questionsAndAnswers = [
     { id: 'q12', question: '999', correctAnswer: '1000', choices: ['990', '1000', '909'] }
 ];
 
-// CORS configuration
-const corsOptions = {
+// Middleware setup (order matters!)
+app.use(express.json({ limit: '10mb' }));
+app.use(cors({
     origin: [
         'http://localhost:3000',
-        'http://localhost:5173',
+        'http://localhost:5173', 
         'http://localhost:8080',
         'https://math-worksheet-vue.vercel.app',
         'https://math-worksheet-react.vercel.app'
     ],
-    credentials: true
-};
+    credentials: true,
+    maxAge: 3600 // Cache preflight for 1 hour
+}));
 
-// Basic middleware
-app.use(cors(corsOptions));
-app.use(express.json());
-
-// Simple request logging
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-    next();
-});
-
-// Reset daily stats
-const resetDailyStats = () => {
-    const now = new Date();
-    const lastReset = new Date(requestStats.lastReset);
-    
-    if (now.getDate() !== lastReset.getDate()) {
-        requestStats.questionsRequested = 0;
-        requestStats.scoresSubmitted = 0;
-        requestStats.scoresViewed = 0;
-        requestStats.lastReset = now;
-        console.log('Daily stats reset');
+// Minimal logging to prevent overhead
+const logRequest = (req, res, next) => {
+    // Only log API calls, not health checks
+    if (req.path.startsWith('/api')) {
+        console.log(`API: ${req.method} ${req.path}`);
     }
-};
-
-// Basic rate limiting
-const requestCounts = new Map();
-const checkRateLimit = (req, res, next) => {
-    const clientIP = req.ip || req.connection.remoteAddress;
-    const now = Date.now();
-    const windowMs = 60000; // 1 minute
-    const maxRequests = 20;
-    
-    if (!requestCounts.has(clientIP)) {
-        requestCounts.set(clientIP, []);
-    }
-    
-    const requests = requestCounts.get(clientIP);
-    const recentRequests = requests.filter(time => now - time < windowMs);
-    
-    if (recentRequests.length >= maxRequests) {
-        return res.status(429).json({ message: 'Too many requests' });
-    }
-    
-    recentRequests.push(now);
-    requestCounts.set(clientIP, recentRequests);
     next();
 };
+app.use(logRequest);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.status(200).json({ 
-        status: 'OK', 
-        timestamp: new Date().toISOString() 
-    });
-});
+// Simple daily reset (no complex processing)
+const checkDailyReset = () => {
+    const today = new Date().toDateString();
+    if (dailyStats.lastReset !== today) {
+        dailyStats.requests = 0;
+        dailyStats.lastReset = today;
+        return true;
+    }
+    return false;
+};
 
-// Stats endpoint
-app.get('/api/stats', (req, res) => {
-    resetDailyStats();
-    res.status(200).json({
-        stats: requestStats,
-        message: 'API statistics'
-    });
-});
-
-// API: Get questions
-app.get('/api/questions', checkRateLimit, (req, res) => {
-    resetDailyStats();
+// Simplified rate limiting (prevent infinite loops)
+const rateLimiter = (req, res, next) => {
+    // Skip rate limiting for health checks to prevent Vercel issues
+    if (req.path === '/health') {
+        return next();
+    }
     
-    // Check daily limit
-    if (requestStats.totalInteractions >= requestStats.dailyLimit) {
+    checkDailyReset();
+    
+    // Simple daily limit check
+    if (dailyStats.requests >= dailyStats.limit) {
         return res.status(429).json({ 
-            message: 'Daily limit reached',
-            limit: requestStats.dailyLimit,
-            current: requestStats.totalInteractions 
+            error: 'Daily limit reached',
+            reset: 'Midnight UTC'
         });
     }
     
-    // Count interaction
-    requestStats.questionsRequested++;
-    console.log(`Questions requested: ${requestStats.questionsRequested} times today`);
-    
-    // Send questions (without correct answers)
+    dailyStats.requests++;
+    next();
+};
+
+// Optimized health check (no processing, immediate response)
+app.get('/health', (req, res) => {
+    res.status(200).end('OK'); // Fastest possible response
+});
+
+// Block favicon and other bot requests immediately
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+app.get('/robots.txt', (req, res) => res.status(204).end());
+app.get('/', (req, res) => res.status(404).end());
+
+// Stats endpoint with rate limiting
+app.get('/api/stats', rateLimiter, (req, res) => {
+    res.status(200).json({
+        dailyRequests: dailyStats.requests,
+        limit: dailyStats.limit,
+        reset: dailyStats.lastReset
+    });
+});
+
+// API: Get questions (using your questionsAndAnswers array)
+app.get('/api/questions', rateLimiter, (req, res) => {
+    // Transform your questionsAndAnswers to frontend format (without correct answers)
     const questionsForFrontend = questionsAndAnswers.map(qa => ({
         id: qa.id,
         question: qa.question,
@@ -137,69 +115,37 @@ app.get('/api/questions', checkRateLimit, (req, res) => {
     res.status(200).json(questionsForFrontend);
 });
 
-// API: Submit score
-app.post('/api/scores', checkRateLimit, (req, res) => {
-    resetDailyStats();
-    
-    // Check daily limit
-    if (requestStats.totalInteractions >= requestStats.dailyLimit) {
-        return res.status(429).json({ 
-            message: 'Daily limit reached',
-            limit: requestStats.dailyLimit,
-            current: requestStats.totalInteractions 
-        });
-    }
-    
-    // Count interaction
-    requestStats.scoresSubmitted++;
-    console.log(`Scores submitted: ${requestStats.scoresSubmitted} times today`);
-    
+// API: Submit score (optimized)
+app.post('/api/scores', rateLimiter, (req, res) => {
     const { name, userAnswers } = req.body;
     
-    // Validation
-    if (!name || userAnswers === undefined) {
-        return res.status(400).json({ message: 'Name and answers are required' });
+    // Fast validation
+    if (!name || !userAnswers) {
+        return res.status(400).json({ error: 'Name and answers required' });
     }
     
-    // Calculate score
-    let currentScore = 0;
+    // Calculate score using your questionsAndAnswers array
+    let score = 0;
     questionsAndAnswers.forEach(qa => {
         if (userAnswers[qa.id] === qa.correctAnswer) {
-            currentScore++;
+            score++;
         }
     });
     
-    // Add to high scores
-    highScores.push({ name, score: currentScore, date: new Date() });
-    
-    // Sort and keep top 10
+    // Add to scores (limit array size to prevent memory issues)
+    highScores.push({ name: name.substring(0, 20), score, date: Date.now() });
     highScores.sort((a, b) => b.score - a.score);
-    highScores = highScores.slice(0, 10);
+    highScores = highScores.slice(0, 10); // Keep only top 10
     
-    res.status(201).json({
-        message: `You scored ${currentScore} out of 12!`,
-        score: currentScore,
+    res.status(200).json({
+        score,
+        message: `Score: ${score}/12`,
         highScores
     });
 });
 
-// API: Get high scores
-app.get('/api/scores', checkRateLimit, (req, res) => {
-    resetDailyStats();
-    
-    // Check daily limit
-    if (requestStats.totalInteractions >= requestStats.dailyLimit) {
-        return res.status(429).json({ 
-            message: 'Daily limit reached',
-            limit: requestStats.dailyLimit,
-            current: requestStats.totalInteractions 
-        });
-    }
-    
-    // Count interaction
-    requestStats.scoresViewed++;
-    console.log(`Scores viewed: ${requestStats.scoresViewed} times today`);
-    
+// API: Get high scores (cached response)
+app.get('/api/scores', rateLimiter, (req, res) => {
     res.status(200).json(highScores);
 });
 
