@@ -120,14 +120,13 @@ Both frontends consume the same API endpoints, ensuring consistent functionality
 4. Push to the branch (`git push origin feature/new-feature`)
 5. Create a new Pull Request
 
-## License
+## Show Your Support
 
-This project is licensed under the MIT License.
+If you found this project helpful, please give it a ⭐ on GitHub!
 
-## Support
+[![GitHub stars](https://img.shields.io/github/stars/nishanajihah/math-worksheet-vue?style=social)](https://github.com/nishanajihah/math-worksheet-vue/stargazers)
 
-For support, please open an issue in the GitHub repository or contact: **<nishanajihah.dev@gmail.com>**
+## License & Contact
 
-## Author
-
-**Nisha Najihah** - [nishanajihah.dev@gmail.com](mailto:nishanajihah.dev@gmail.com)
+MIT License | Develop by [Nisha Najihah](https://github.com/nishanajihah)  
+Email: <nishanajihah.dev@gmail.com>
