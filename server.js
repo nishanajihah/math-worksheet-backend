@@ -239,16 +239,14 @@ const VALID_ORIGINS = [
 
 // Ultra-aggressive frontend-only validation
 const validateFrontendRequest = (req, res, next) => {
-    // ZERO tolerance - block everything except exact frontend calls
+    // FIRST: Always show status page for root path (before any other checks)
+    if (req.path === '/') {
+        return showStatusPage(req, res);
+    }
     
     // Health check bypass (minimal processing)
     if (req.path === '/health') {
         return res.status(200).end('OK');
-    }
-
-    // Show status page for root path (when someone visits the backend URL)
-    if (req.path === 'https://math-worksheet-backend.vercel.app/') {
-        return showStatusPage(req, res);
     }
 
     // Block ALL other non-API paths immediately (no processing)
@@ -417,6 +415,11 @@ const rateLimiter = (req, res, next) => {
     dailyStats.requests++;
     next();
 };
+
+// Root route - show status page (backup in case middleware doesn't work)
+app.get('/', (req, res) => {
+    showStatusPage(req, res);
+});
 
 // Optimized health check (minimal response)
 app.get('/health', (req, res) => {
