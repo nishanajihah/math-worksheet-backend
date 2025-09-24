@@ -128,12 +128,16 @@ const validateFrontendRequest = (req, res, next) => {
         userAgent.toLowerCase().includes(pattern)
     );
     
-    if (!isValidOrigin && !isValidReferer || isBot) {
-        console.log(`Blocked suspicious request from: ${origin || 'unknown'}`);
+    // Allow direct browser access (when there's no Origin header)
+    const isDirectBrowserAccess = !origin && !referer;
+    
+    // Allow if: valid origin OR valid referer OR direct browser access (and not a bot)
+    if ((isValidOrigin || isValidReferer || isDirectBrowserAccess) && !isBot) {
+        next();
+    } else {
+        console.log(`Blocked request from: ${origin || referer || 'unknown'} - User-Agent: ${userAgent}`);
         return res.status(403).json({ message: 'Access denied' });
     }
-    
-    next();
 };
 
 // Health check endpoint for Vercel (no validation needed)
