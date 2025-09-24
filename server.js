@@ -49,12 +49,38 @@ const corsOptions = {
       credentials: true
 };
 
+// Enhanced request tracking
+let requestTracker = {
+    total: 0,
+    health: 0,
+    api: 0,
+    blocked: 0,
+    bots: 0,
+    cors: 0
+};
+
 // Security middleware - log and filter requests
 app.use((req, res, next) => {
-      console.log(`${new Date().toISOString()} - ${req.method} ${req.path} from ${req.get('Origin') || 'Unknown'}`);
+      requestTracker.total++;
       
-      // Block requests to root path (reduce bot traffic)
-      if (req.path === '/' || req.path === '/favicon.ico') {
+      const origin = req.get('Origin') || 'Direct';
+      const userAgent = req.get('User-Agent') || 'Unknown';
+      const method = req.method;
+      const path = req.path;
+      
+      // Categorize requests
+      if (path === '/health') requestTracker.health++;
+      else if (path.startsWith('/api')) requestTracker.api++;
+      else if (method === 'OPTIONS') requestTracker.cors++;
+      
+      console.log(`[${requestTracker.total}] ${new Date().toISOString()} - ${method} ${path}`);
+      console.log(`   From: ${origin} | Agent: ${userAgent.substring(0, 50)}...`);
+      
+      // Block common bot paths
+      const botPaths = ['/', '/favicon.ico', '/robots.txt', '/sitemap.xml', '/.well-known', '/wp-admin', '/admin'];
+      if (botPaths.some(botPath => path.startsWith(botPath))) {
+            requestTracker.blocked++;
+            console.log(`   BLOCKED: Bot path detected`);
             return res.status(404).json({ message: 'Not found' });
       }
       
@@ -64,13 +90,13 @@ app.use((req, res, next) => {
 app.use(cors(corsOptions)); // request from our frontend
 app.use(express.json()); // read json data sent from frontend
 
-// Rate limiting for API endpoints
+// Rate limiting for API endpoints (more aggressive)
 const requestCounts = new Map();
 app.use('/api', (req, res, next) => {
       const clientIP = req.ip || req.connection.remoteAddress;
       const now = Date.now();
       const windowMs = 60000; // 1 minute
-      const maxRequests = 30; // Max 30 requests per minute per IP
+      const maxRequests = 10; // Reduced to 10 requests per minute per IP
       
       if (!requestCounts.has(clientIP)) {
             requestCounts.set(clientIP, []);
@@ -80,7 +106,8 @@ app.use('/api', (req, res, next) => {
       const recentRequests = requests.filter(time => now - time < windowMs);
       
       if (recentRequests.length >= maxRequests) {
-            return res.status(429).json({ message: 'Too many requests' });
+            console.log(`Rate limited IP: ${clientIP} (${recentRequests.length} requests)`);
+            return res.status(429).json({ message: 'Too many requests - please slow down' });
       }
       
       recentRequests.push(now);
@@ -122,8 +149,14 @@ const validateFrontendRequest = (req, res, next) => {
     const isValidOrigin = origin && allowedOrigins.includes(origin);
     const isValidReferer = referer && allowedOrigins.some(allowed => referer.startsWith(allowed));
     
-    // Block obvious bots and crawlers
-    const botPatterns = ['bot', 'crawler', 'spider', 'scraper'];
+    // Block obvious bots and crawlers (expanded list)
+    const botPatterns = [
+        'bot', 'crawler', 'spider', 'scraper', 'monitor', 'check', 'ping',
+        'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider',
+        'yandexbot', 'facebookexternalhit', 'twitterbot', 'linkedinbot',
+        'whatsapp', 'telegram', 'curl', 'wget', 'python', 'go-http-client',
+        'postman', 'insomnia', 'httpie'
+    ];
     const isBot = userAgent && botPatterns.some(pattern => 
         userAgent.toLowerCase().includes(pattern)
     );
@@ -145,12 +178,18 @@ app.get('/health', (req, res) => {
       res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Stats endpoint to monitor legitimate user interactions
+// Stats endpoint to monitor all requests
 app.get('/api/stats', (req, res) => {
       resetDailyStats();
       res.status(200).json({
-            stats: userInteractionStats,
-            message: 'Only legitimate frontend interactions are counted'
+            userStats: userInteractionStats,
+            requestBreakdown: requestTracker,
+            analysis: {
+                message: 'Request breakdown analysis',
+                legitimateUserRequests: userInteractionStats.totalInteractions,
+                totalServerRequests: requestTracker.total,
+                efficiency: `${((userInteractionStats.totalInteractions / requestTracker.total) * 100).toFixed(1)}% legitimate`
+            }
       });
 });
 
