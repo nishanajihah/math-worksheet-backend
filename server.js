@@ -147,8 +147,15 @@ const validateFrontendRequest = (req, res, next) => {
         origin.startsWith(validOrigin)
     );
     
-    if (!hasValidOrigin) {
-        return res.status(403).end(); // No valid origin = blocked
+    // Temporary: Allow any vercel.app domain for testing
+    const isVercelDomain = origin && origin.includes('.vercel.app');
+    
+    // Temporary: Allow localhost for local development
+    const isLocalhost = origin && (origin.includes('localhost') || origin.includes('127.0.0.1'));
+    
+    if (!hasValidOrigin && !isVercelDomain && !isLocalhost) {
+        console.log(`🚫 Blocked origin: ${origin}`); // Debug logging
+        return res.status(403).end();
     }
 
     // API-specific validation
