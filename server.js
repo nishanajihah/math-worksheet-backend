@@ -61,149 +61,7 @@ const saveStats = async () => {
     }
 };
 
-// Status page for when someone visits the backend URL directly
-const showStatusPage = (req, res) => {
-    const statusHTML = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Math Worksheet Backend API</title>
-        <style>
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                margin: 0;
-                padding: 20px;
-                min-height: 100vh;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            }
-            .container {
-                background: rgba(255, 255, 255, 0.1);
-                backdrop-filter: blur(10px);
-                border-radius: 20px;
-                padding: 40px;
-                max-width: 600px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-                text-align: center;
-            }
-            .title {
-                font-size: 2.5em;
-                margin-bottom: 10px;
-                color: #fff;
-            }
-            .subtitle {
-                font-size: 1.2em;
-                margin-bottom: 30px;
-                opacity: 0.9;
-            }
-            .status-box {
-                background: rgba(0, 255, 100, 0.2);
-                border: 2px solid #00ff64;
-                border-radius: 10px;
-                padding: 20px;
-                margin: 20px 0;
-            }
-            .api-info {
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 10px;
-                padding: 20px;
-                margin: 20px 0;
-                text-align: left;
-            }
-            .endpoint {
-                font-family: 'Courier New', monospace;
-                background: rgba(0, 0, 0, 0.3);
-                padding: 8px 12px;
-                border-radius: 5px;
-                margin: 5px 0;
-                display: block;
-            }
-            .warning {
-                background: rgba(255, 193, 7, 0.2);
-                border: 2px solid #ffc107;
-                border-radius: 10px;
-                padding: 15px;
-                margin: 20px 0;
-            }
-            .stats {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 15px;
-                margin-top: 20px;
-            }
-            .stat-box {
-                background: rgba(255, 255, 255, 0.1);
-                padding: 15px;
-                border-radius: 10px;
-            }
-            .green { color: #00ff64; }
-            .yellow { color: #ffc107; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1 class="title"> Math Worksheet Backend</h1>
-            <p class="subtitle">API Server Status Dashboard</p>
-            
-            <div class="status-box">
-                <h2 class="green">✅ Backend is Running</h2>
-                <p>The API server is online and ready to serve your frontend application.</p>
-                <p><strong>Server Time:</strong> ${new Date().toLocaleString()}</p>
-            </div>
 
-            <div class="api-info">
-                <h3> Available API Endpoints:</h3>
-                <code class="endpoint">GET /api/questions</code>
-                <small>Fetch math worksheet questions</small>
-                
-                <code class="endpoint">POST /api/scores</code>
-                <small>Submit quiz answers and get score</small>
-                
-                <code class="endpoint">GET /api/scores</code>
-                <small>Get leaderboard (top 10 scores)</small>
-                
-                <code class="endpoint">GET /health</code>
-                <small>Health check endpoint</small>
-            </div>
-
-            <div class="stats">
-                <div class="stat-box">
-                    <h4> Total Scores</h4>
-                    <p class="green">${highScores.length}</p>
-                </div>
-                <div class="stat-box">
-                    <h4> Daily Requests</h4>
-                    <p class="yellow">${dailyStats.requests}</p>
-                </div>
-            </div>
-
-            <div class="warning">
-                <h3>⚠️ For Frontend Use Only</h3>
-                <p>This API is designed to be called by the frontend application, not accessed directly by users. Direct browser visits are for monitoring purposes only.</p>
-            </div>
-
-            <p style="margin-top: 30px; opacity: 0.7;">
-                 Powered by Node.js & Express | Deployed on Vercel
-            </p>
-        </div>
-
-        <script>
-            // Add some interactivity
-            console.log(' Math Worksheet Backend API v1.0');
-            console.log(' Available endpoints: /api/questions, /api/scores, /health');
-            console.log(' Status: Online and ready');
-        </script>
-    </body>
-    </html>
-    `;
-
-    res.status(200).send(statusHTML);
-};
 
 // Questions data
 const questionsAndAnswers = [
@@ -239,17 +97,12 @@ const VALID_ORIGINS = [
 
 // Ultra-aggressive frontend-only validation
 const validateFrontendRequest = (req, res, next) => {
-    // FIRST: Always show status page for root path (before any other checks)
-    if (req.path === '/') {
-        return showStatusPage(req, res);
-    }
-    
     // Health check bypass (minimal processing)
     if (req.path === '/health') {
         return res.status(200).end('OK');
     }
 
-    // Block ALL other non-API paths immediately (no processing)
+    // Block ALL non-API paths immediately (no processing)
     if (!req.path.startsWith('/api/')) {
         return res.status(404).end();
     }
@@ -415,11 +268,6 @@ const rateLimiter = (req, res, next) => {
     dailyStats.requests++;
     next();
 };
-
-// Root route - show status page (backup in case middleware doesn't work)
-app.get('/', (req, res) => {
-    showStatusPage(req, res);
-});
 
 // Optimized health check (minimal response)
 app.get('/health', (req, res) => {
