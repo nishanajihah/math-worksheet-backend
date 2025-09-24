@@ -9,6 +9,18 @@ const port = 3000;
 // simple array store scores temporarily
 let highScores = [];
 
+// Track legitimate user interactions only
+let userInteractionStats = {
+      questionsRequested: 0,
+      scoresSubmitted: 0,
+      scoresViewed: 0,
+      lastReset: new Date(),
+      dailyLimit: 200, // Max 200 legitimate interactions per day
+      get totalInteractions() {
+            return this.questionsRequested + this.scoresSubmitted + this.scoresViewed;
+      }
+};
+
 // store question and answers on the backend
 const questionsAndAnswers = [
       { id: 'q1', question: '17', correctAnswer: '20', choices: ['10', '20', '17'] },
@@ -31,8 +43,8 @@ const corsOptions = {
             'http://localhost:3000',
             'http://localhost:5173',
             'http://localhost:8080',
-            'https://math-worksheet-vue-nishanajihah.vercel.app', // Replace with your actual Vue app URL
-            'https://math-worksheet-react-nishanajihah.vercel.app' // Replace with your actual React app URL
+            'https://math-worksheet-vue.vercel.app/', // Replace with your actual Vue app URL
+            'https://math-worksheet-react.vercel.app/' // Replace with your actual React app URL
             ],
       credentials: true
 };
@@ -76,15 +88,86 @@ app.use('/api', (req, res, next) => {
       next();
 });
 
-// Health check endpoint for Vercel
+// Reset daily stats at midnight
+const resetDailyStats = () => {
+    const now = new Date();
+    const lastReset = new Date(userInteractionStats.lastReset);
+    
+    if (now.getDate() !== lastReset.getDate()) {
+        userInteractionStats.questionsRequested = 0;
+        userInteractionStats.scoresSubmitted = 0;
+        userInteractionStats.scoresViewed = 0;
+        userInteractionStats.lastReset = now;
+        console.log('Daily stats reset');
+    }
+};
+
+// Middleware to validate legitimate frontend requests
+const validateFrontendRequest = (req, res, next) => {
+    resetDailyStats();
+    
+    const origin = req.get('Origin');
+    const referer = req.get('Referer');
+    const userAgent = req.get('User-Agent');
+    
+    // Check if request comes from allowed origins
+    const allowedOrigins = [
+        'http://localhost:3000',
+        'http://localhost:5173', 
+        'http://localhost:8080',
+        'https://math-worksheet-vue-nishanajihah.vercel.app',
+        'https://math-worksheet-react-nishanajihah.vercel.app'
+    ];
+    
+    const isValidOrigin = origin && allowedOrigins.includes(origin);
+    const isValidReferer = referer && allowedOrigins.some(allowed => referer.startsWith(allowed));
+    
+    // Block obvious bots and crawlers
+    const botPatterns = ['bot', 'crawler', 'spider', 'scraper'];
+    const isBot = userAgent && botPatterns.some(pattern => 
+        userAgent.toLowerCase().includes(pattern)
+    );
+    
+    if (!isValidOrigin && !isValidReferer || isBot) {
+        console.log(`Blocked suspicious request from: ${origin || 'unknown'}`);
+        return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    next();
+};
+
+// Health check endpoint for Vercel (no validation needed)
 app.get('/health', (req, res) => {
       res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Stats endpoint to monitor legitimate user interactions
+app.get('/api/stats', (req, res) => {
+      resetDailyStats();
+      res.status(200).json({
+            stats: userInteractionStats,
+            message: 'Only legitimate frontend interactions are counted'
+      });
 });
 
 // API endpoint: GET /api/questions
 
 // Endpoint send question to the frontend
-app.get('/api/questions', (req, res) => {
+app.get('/api/questions', validateFrontendRequest, (req, res) => {
+      // Check daily interaction limit
+      if (userInteractionStats.totalInteractions >= userInteractionStats.dailyLimit) {
+            return res.status(429).json({ 
+                message: 'Daily limit reached', 
+                limit: userInteractionStats.dailyLimit,
+                current: userInteractionStats.totalInteractions 
+            });
+      }
+      
+      // Count this legitimate user interaction
+      userInteractionStats.questionsRequested++;
+      
+      console.log(`Questions requested: ${userInteractionStats.questionsRequested} times today`);
+      
       // This is the correct way to transform our data into the desired format.
       const questionsForFrontend = questionsAndAnswers.map(qa => ({
             id: qa.id,
@@ -98,7 +181,19 @@ app.get('/api/questions', (req, res) => {
 // API endpoint : POST /api/scores
 
 // Endpoint handle saving new score'
-app.post("/api/scores", (req, res) => {
+app.post("/api/scores", validateFrontendRequest, (req, res) => {
+      // Check daily interaction limit
+      if (userInteractionStats.totalInteractions >= userInteractionStats.dailyLimit) {
+            return res.status(429).json({ 
+                message: 'Daily limit reached', 
+                limit: userInteractionStats.dailyLimit,
+                current: userInteractionStats.totalInteractions 
+            });
+      }
+      
+      // Count this legitimate user interaction
+      userInteractionStats.scoresSubmitted++;
+      console.log(`Scores submitted: ${userInteractionStats.scoresSubmitted} times today`);
       // Get name and score from request body
       const { name, userAnswers } = req.body;
 
@@ -135,7 +230,20 @@ app.post("/api/scores", (req, res) => {
 // API endpoint: GET /api/scores
 
 // Endpoint handles retrieving the list of scores
-app.get("/api/scores", (req, res) => {
+app.get("/api/scores", validateFrontendRequest, (req, res) => {
+      // Check daily interaction limit
+      if (userInteractionStats.totalInteractions >= userInteractionStats.dailyLimit) {
+            return res.status(429).json({ 
+                message: 'Daily limit reached', 
+                limit: userInteractionStats.dailyLimit,
+                current: userInteractionStats.totalInteractions 
+            });
+      }
+      
+      // Count this legitimate user interaction
+      userInteractionStats.scoresViewed++;
+      console.log(`Scores viewed: ${userInteractionStats.scoresViewed} times today`);
+      
       // send the current list of high scores back to the frontend
       res.status(200).send(highScores);
 });
