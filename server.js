@@ -44,39 +44,63 @@ const VALID_ORIGINS = [
     'https://math-worksheet-react.vercel.app'
 ];
 
-// Middleware: Validate frontend request
+// Middleware: Ultra-strict request validation
 const validateFrontendRequest = (req, res, next) => {
-    // Skip validation for health checks
+    // Only allow health checks and exact API paths
+    const allowedPaths = ['/health', '/api/questions', '/api/scores'];
+    
+    // Block any path not in our whitelist
+    if (!allowedPaths.includes(req.path)) {
+        return res.status(404).end(); // Silent 404 for invalid paths
+    }
+
+    // Skip validation for health checks only
     if (req.path === '/health') {
         return next();
     }
 
-    // Check if request is from valid frontend
-    const origin = req.get('Origin') || req.get('Referer');
+    const origin = req.get('Origin') || req.get('Referer') || '';
     const userAgent = req.get('User-Agent') || '';
+    const acceptHeader = req.get('Accept') || '';
 
-    // Block obvious bots immediately
+    // Expanded bot detection patterns
     const botPatterns = [
-        'bot', 'crawler', 'spider', 'scraper', 'curl', 'wget', 'python',
-        'postman', 'insomnia', 'facebookexternalhit', 'twitterbot',
-        'googlebot', 'bingbot', 'slackbot', 'whatsapp', 'telegram'
+        'bot', 'crawler', 'spider', 'scraper', 'curl', 'wget', 'python', 'java',
+        'postman', 'insomnia', 'facebookexternalhit', 'twitterbot', 'linkedinbot',
+        'googlebot', 'bingbot', 'slackbot', 'whatsapp', 'telegram', 'discordbot',
+        'amazonbot', 'applebot', 'baiduspider', 'yandex', 'duckduckbot',
+        'semrushbot', 'ahrefs', 'mj12bot', 'dotbot', 'petalbot', 'seznambot',
+        'adsbot', 'pingdom', 'uptimerobot', 'monitor', 'check', 'test',
+        'scan', 'audit', 'security', 'vulnerability', 'penetration',
+        'apache', 'nginx', 'http', 'requests', 'urllib', 'httpx'
     ];
 
-    if (botPatterns.some(pattern => userAgent.toLowerCase().includes(pattern))) {
-        return res.status(403).end(); // Silent rejection for bots
+    // Block suspicious user agents immediately
+    const lowerUserAgent = userAgent.toLowerCase();
+    if (botPatterns.some(pattern => lowerUserAgent.includes(pattern)) || 
+        userAgent.length < 10 || // Too short user agents are suspicious
+        !userAgent.includes('Mozilla')) { // Legitimate browsers include Mozilla
+        return res.status(403).end();
     }
 
-    // For API endpoints, require valid origin or proper headers
+    // For API endpoints - STRICT validation
     if (req.path.startsWith('/api')) {
+        // Must have valid origin from our frontend
         const hasValidOrigin = origin && VALID_ORIGINS.some(validOrigin => 
             origin.startsWith(validOrigin)
         );
         
-        const hasValidHeaders = req.get('Content-Type') || req.get('Accept');
+        // Must accept JSON responses (legitimate frontend calls)
+        const acceptsJson = acceptHeader.includes('application/json') || 
+                           acceptHeader.includes('*/*');
         
-        // Allow if either valid origin OR proper API headers (for direct testing)
-        if (!hasValidOrigin && !hasValidHeaders) {
-            return res.status(403).json({ error: 'Access denied' });
+        // Must be GET request for questions or POST for scores
+        const validMethod = (req.path === '/api/questions' && req.method === 'GET') ||
+                           (req.path === '/api/scores' && req.method === 'POST');
+
+        // Block if missing any requirement
+        if (!hasValidOrigin || !acceptsJson || !validMethod) {
+            return res.status(403).end();
         }
     }
 
@@ -94,15 +118,48 @@ app.use(cors({
 // Apply frontend validation to all routes
 app.use(validateFrontendRequest);
 
-// Minimal logging to prevent overhead
-const logRequest = (req, res, next) => {
-    // Only log API calls, not health checks
-    if (req.path.startsWith('/api')) {
-        console.log(`API: ${req.method} ${req.path}`);
+// Ultra-aggressive IP rate limiting
+const ipLimiter = (req, res, next) => {
+    const clientIP = req.get('CF-Connecting-IP') || 
+                    req.get('X-Forwarded-For')?.split(',')[0] || 
+                    req.connection.remoteAddress || 
+                    'unknown';
+    
+    const now = Date.now();
+    const windowMs = 60 * 1000; // 1 minute window
+    const maxRequests = 5; // Max 5 requests per minute per IP
+    
+    if (!global.ipTracker) global.ipTracker = new Map();
+    
+    const ipData = global.ipTracker.get(clientIP) || { count: 0, resetTime: now + windowMs };
+    
+    // Reset window if expired
+    if (now > ipData.resetTime) {
+        ipData.count = 0;
+        ipData.resetTime = now + windowMs;
     }
+    
+    // Block if over limit
+    if (ipData.count >= maxRequests) {
+        return res.status(429).end(); // Silent rejection
+    }
+    
+    ipData.count++;
+    global.ipTracker.set(clientIP, ipData);
+    
+    // Clean old entries periodically
+    if (Math.random() < 0.01) { // 1% chance to clean
+        for (const [ip, data] of global.ipTracker.entries()) {
+            if (now > data.resetTime) {
+                global.ipTracker.delete(ip);
+            }
+        }
+    }
+    
     next();
 };
-app.use(logRequest);
+
+app.use(ipLimiter);
 
 // Simple daily reset (no complex processing)
 const checkDailyReset = () => {
@@ -136,15 +193,26 @@ const rateLimiter = (req, res, next) => {
     next();
 };
 
-// Optimized health check (no processing, immediate response)
+// Optimized health check (minimal response)
 app.get('/health', (req, res) => {
-    res.status(200).end('OK'); // Fastest possible response
+    res.status(200).end('OK');
 });
 
-// Block favicon and other bot requests immediately
-app.get('/favicon.ico', (req, res) => res.status(204).end());
-app.get('/robots.txt', (req, res) => res.status(204).end());
-app.get('/', (req, res) => res.status(404).end());
+// Aggressive blocking of common bot/crawler paths
+const blockedPaths = [
+    '/favicon.ico', '/robots.txt', '/sitemap.xml', '/ads.txt', '/.well-known/',
+    '/wp-admin/', '/wp-login.php', '/administrator/', '/admin/', '/login/',
+    '/xmlrpc.php', '/.env', '/config/', '/api/v1/', '/v1/', '/graphql/',
+    '/swagger/', '/docs/', '/debug/', '/test/', '/ping/', '/status/',
+    '/metrics/', '/actuator/', '/.git/', '/phpmyadmin/', '/mysql/',
+    '/wp-content/', '/wp-includes/', '/wp-json/', '/feed/', '/rss/',
+    '/atom.xml', '/index.php', '/index.html', '/default.html'
+];
+
+// Block all common bot paths with minimal processing
+blockedPaths.forEach(path => {
+    app.use(path, (req, res) => res.status(404).end());
+});
 
 // Stats endpoint with rate limiting
 app.get('/api/stats', rateLimiter, (req, res) => {
