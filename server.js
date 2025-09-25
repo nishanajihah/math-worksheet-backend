@@ -198,8 +198,9 @@ app.get('/debug', (req, res) => {
 // Block ALL non-API paths immediately (handled in validateFrontendRequest now)
 // This is now redundant since validateFrontendRequest blocks everything except /health and /api/*
 
-// Stats endpoint with rate limiting
-app.get('/api/stats', rateLimiter, (req, res) => {
+// Stats endpoint (no rate limiting)
+app.get('/api/stats', (req, res) => {
+    console.log('📊 GET /api/stats called');
     res.status(200).json({
         dailyRequests: dailyStats.requests,
         limit: dailyStats.limit,
@@ -207,27 +208,38 @@ app.get('/api/stats', rateLimiter, (req, res) => {
     });
 });
 
-// API: Get questions (using your questionsAndAnswers array)
+// API: Get questions (simplified)
 app.get('/api/questions', (req, res) => {
-    console.log('📚 GET /api/questions called');
+    console.log('📚 GET /api/questions - Request received');
+    console.log('📍 Origin:', req.get('Origin') || 'none');
+    console.log('📍 User-Agent:', req.get('User-Agent')?.substring(0, 50) || 'none');
     
-    // Transform your questionsAndAnswers to frontend format (without correct answers)
-    const questionsForFrontend = questionsAndAnswers.map(qa => ({
-        id: qa.id,
-        question: qa.question,
-        choices: qa.choices
-    }));
-    
-    console.log(`✅ Returning ${questionsForFrontend.length} questions`);
-    res.status(200).json(questionsForFrontend);
+    try {
+        const questionsForFrontend = questionsAndAnswers.map(qa => ({
+            id: qa.id,
+            question: qa.question,
+            choices: qa.choices
+        }));
+        
+        console.log(`✅ Returning ${questionsForFrontend.length} questions`);
+        res.status(200).json(questionsForFrontend);
+    } catch (error) {
+        console.error('❌ Error in /api/questions:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 // API: Submit score (with persistent storage)
 app.post('/api/scores', async (req, res) => {
+    console.log('📝 POST /api/scores - Request received');
+    console.log('Origin:', req.get('Origin'));
+    console.log('User-Agent:', req.get('User-Agent'));
+    
     const { name, userAnswers } = req.body;
     
     // Fast validation
     if (!name || !userAnswers) {
+        console.log('❌ Validation failed: missing name or userAnswers');
         return res.status(400).json({ error: 'Name and answers required' });
     }
     
@@ -269,16 +281,23 @@ app.post('/api/scores', async (req, res) => {
 // API: Get high scores (with fresh data from file if needed)
 app.get('/api/scores', (req, res) => {
     console.log('🏆 GET /api/scores called');
+    console.log('Origin:', req.get('Origin'));
+    console.log('User-Agent:', req.get('User-Agent'));
     
-    // Return top 10 scores for the leaderboard
-    const topScores = highScores.slice(0, 10).map(score => ({
-        name: score.name,
-        score: score.score,
-        date: score.dateString || new Date(score.date).toISOString().split('T')[0]
-    }));
-    
-    console.log(`✅ Returning ${topScores.length} high scores`);
-    res.status(200).json(topScores);
+    try {
+        // Return top 10 scores for the leaderboard
+        const topScores = highScores.slice(0, 10).map(score => ({
+            name: score.name,
+            score: score.score,
+            date: score.dateString || new Date(score.date).toISOString().split('T')[0]
+        }));
+        
+        console.log(`✅ Returning ${topScores.length} high scores`);
+        res.status(200).json(topScores);
+    } catch (error) {
+        console.error('❌ Error in GET /api/scores:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 // Start server
