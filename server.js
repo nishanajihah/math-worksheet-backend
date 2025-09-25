@@ -92,8 +92,10 @@ const VALID_ORIGINS = [
     'https://math-worksheet-react.vercel.app'
 ];
 
-// Ultra-aggressive frontend-only validation
+// Simplified frontend validation (less aggressive for debugging)
 const validateFrontendRequest = (req, res, next) => {
+    console.log(`🔍 Request: ${req.method} ${req.path} from ${req.get('Origin') || 'no-origin'}`);
+    
     // Health check bypass (minimal processing)
     if (req.path === '/health') {
         return res.status(200).end('OK');
@@ -104,186 +106,32 @@ const validateFrontendRequest = (req, res, next) => {
         return next();
     }
 
-    // Block ALL other non-API paths immediately (no processing)
-    if (!req.path.startsWith('/api/')) {
-        return res.status(404).end();
+    // Allow API paths to proceed
+    if (req.path.startsWith('/api/')) {
+        return next();
     }
 
-    // Get request details
-    const origin = req.get('Origin') || req.get('Referer') || '';
-    const userAgent = req.get('User-Agent') || '';
-    const acceptHeader = req.get('Accept') || '';
-    const contentType = req.get('Content-Type') || '';
+    // Block everything else
+    return res.status(404).json({ error: 'Path not found', path: req.path });
 
-    // INSTANT bot blocking - expanded patterns
-    const botPatterns = [
-        'bot', 'crawler', 'spider', 'scraper', 'curl', 'wget', 'python', 'java', 'go-http',
-        'postman', 'insomnia', 'httpie', 'rest', 'api', 'test', 'monitor', 'check',
-        'scan', 'audit', 'security', 'vulnerability', 'penetration', 'hack', 'exploit',
-        'facebookexternalhit', 'twitterbot', 'linkedinbot', 'whatsapp', 'telegram',
-        'googlebot', 'bingbot', 'yandex', 'baiduspider', 'duckduckbot', 'slackbot',
-        'amazonbot', 'applebot', 'semrushbot', 'ahrefs', 'mj12bot', 'dotbot',
-        'petalbot', 'seznambot', 'adsbot', 'pingdom', 'uptimerobot', 'nagios',
-        'apache', 'nginx', 'http', 'requests', 'urllib', 'httpx', 'axios', 'fetch',
-        'chrome-lighthouse', 'pagespeed', 'gtmetrix', 'pingability', 'StatusCake'
-    ];
-
-    const lowerUserAgent = userAgent.toLowerCase();
-    
-    // Block if ANY bot pattern matches
-    if (botPatterns.some(pattern => lowerUserAgent.includes(pattern))) {
-        return res.status(403).end();
-    }
-
-    // Block suspicious user agents
-    if (userAgent.length < 20 || // Too short
-        !userAgent.includes('Mozilla') || // Not a real browser
-        !userAgent.includes('WebKit') || // Not a modern browser
-        userAgent.includes('HeadlessChrome') || // Automated browser
-        userAgent.includes('PhantomJS')) { // Automated browser
-        return res.status(403).end();
-    }
-
-    // Enhanced origin validation with better debugging
-    const hasValidOrigin = origin && VALID_ORIGINS.some(validOrigin => 
-        origin.startsWith(validOrigin)
-    );
-    
-    // Temporary: Allow any .vercel.app domain while debugging
-    const isVercelApp = origin && origin.includes('.vercel.app');
-    
-    // Log all requests for debugging
-    console.log(`🔍 API Request - Origin: "${origin}", Path: ${req.path}, Method: ${req.method}`);
-    
-    if (!hasValidOrigin && !isVercelApp) {
-        console.log(`🚫 BLOCKED - Origin: "${origin}" not in allowed list`);
-        console.log(`📋 Allowed origins:`, VALID_ORIGINS);
-        return res.status(403).json({ 
-            error: 'Origin not allowed',
-            origin: origin,
-            allowedOrigins: VALID_ORIGINS
-        });
-    }
-    
-    console.log(`✅ ALLOWED - Origin: "${origin}"`);
-
-    // API-specific validation (relaxed for debugging)
-    if (req.path === '/api/questions') {
-        // Must be GET and accept JSON
-        if (req.method !== 'GET') {
-            console.log(`🚫 BLOCKED /api/questions - Wrong method: ${req.method}`);
-            return res.status(405).json({ error: 'Method not allowed', expected: 'GET' });
-        }
-    } else if (req.path === '/api/scores') {
-        // Allow both GET (fetch scores) and POST (submit score)
-        if (req.method === 'GET') {
-            console.log(`✅ GET /api/scores - Fetching high scores`);
-        } else if (req.method === 'POST') {
-            if (!contentType.includes('application/json')) {
-                console.log(`🚫 BLOCKED POST /api/scores - Wrong content type: ${contentType}`);
-                return res.status(400).json({ error: 'Content-Type must be application/json' });
-            }
-            console.log(`✅ POST /api/scores - Submitting score`);
-        } else {
-            console.log(`🚫 BLOCKED /api/scores - Wrong method: ${req.method}`);
-            return res.status(405).json({ error: 'Method not allowed', expected: 'GET or POST' });
-        }
-    } else {
-        // Block any other API paths
-        console.log(`🚫 BLOCKED - Unknown API path: ${req.path}`);
-        return res.status(404).json({ error: 'API endpoint not found' });
-    }
-
-    next();
 };
 
 // Enhanced middleware setup with better CORS
 app.use(express.json({ limit: '1mb' }));
 
-// Debugging CORS configuration (temporarily relaxed)
+// Very permissive CORS for debugging
 app.use(cors({
-    origin: function (origin, callback) {
-        console.log(`🔍 CORS Check - Origin: "${origin}"`);
-        
-        // Allow requests with no origin (mobile apps, etc.)
-        if (!origin) {
-            console.log(`✅ CORS ALLOWED: No origin (mobile/app request)`);
-            return callback(null, true);
-        }
-        
-        // Check if origin is in VALID_ORIGINS
-        const isValidOrigin = VALID_ORIGINS.some(validOrigin => 
-            origin.startsWith(validOrigin)
-        );
-        
-        // Temporarily allow any Vercel app for debugging
-        const isVercelApp = origin.includes('.vercel.app');
-        
-        if (isValidOrigin || isVercelApp) {
-            console.log(`✅ CORS ALLOWED: ${origin}`);
-            return callback(null, true);
-        }
-        
-        console.log(`🚫 CORS BLOCKED: ${origin}`);
-        console.log(`📋 Valid origins:`, VALID_ORIGINS);
-        return callback(null, false);
-    },
+    origin: true, // Allow all origins for now
     credentials: true,
-    maxAge: 3600,
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'X-Requested-With', 'Authorization']
 }));
 
 // Apply frontend validation to all routes
 app.use(validateFrontendRequest);
 
-// Extreme rate limiting - almost zero tolerance
-const ipLimiter = (req, res, next) => {
-    // Skip for health checks (let Vercel ping freely)
-    if (req.path === '/health') {
-        return next();
-    }
-
-    const clientIP = req.get('CF-Connecting-IP') || 
-                    req.get('X-Forwarded-For')?.split(',')[0] || 
-                    req.connection.remoteAddress || 
-                    'unknown';
-    
-    const now = Date.now();
-    const windowMs = 5 * 60 * 1000; // 5 minute window
-    const maxRequests = 3; // MAX 3 requests per 5 minutes per IP
-    
-    if (!global.ipTracker) global.ipTracker = new Map();
-    
-    const ipData = global.ipTracker.get(clientIP) || { count: 0, resetTime: now + windowMs };
-    
-    // Reset window if expired
-    if (now > ipData.resetTime) {
-        ipData.count = 0;
-        ipData.resetTime = now + windowMs;
-    }
-    
-    // AGGRESSIVE blocking - very few requests allowed
-    if (ipData.count >= maxRequests) {
-        return res.status(429).end();
-    }
-    
-    ipData.count++;
-    global.ipTracker.set(clientIP, ipData);
-    
-    // Aggressive cleanup to prevent memory issues
-    if (Math.random() < 0.05) { // 5% chance to clean
-        for (const [ip, data] of global.ipTracker.entries()) {
-            if (now > data.resetTime + windowMs) { // Extra buffer for cleanup
-                global.ipTracker.delete(ip);
-            }
-        }
-    }
-    
-    next();
-};
-
-app.use(ipLimiter);
+// Temporarily disabled IP limiting for debugging
+// const ipLimiter = ... (commented out)
 
 // Simple daily reset with persistent storage
 const checkDailyReset = () => {
@@ -360,7 +208,9 @@ app.get('/api/stats', rateLimiter, (req, res) => {
 });
 
 // API: Get questions (using your questionsAndAnswers array)
-app.get('/api/questions', rateLimiter, (req, res) => {
+app.get('/api/questions', (req, res) => {
+    console.log('📚 GET /api/questions called');
+    
     // Transform your questionsAndAnswers to frontend format (without correct answers)
     const questionsForFrontend = questionsAndAnswers.map(qa => ({
         id: qa.id,
@@ -368,11 +218,12 @@ app.get('/api/questions', rateLimiter, (req, res) => {
         choices: qa.choices
     }));
     
+    console.log(`✅ Returning ${questionsForFrontend.length} questions`);
     res.status(200).json(questionsForFrontend);
 });
 
 // API: Submit score (with persistent storage)
-app.post('/api/scores', rateLimiter, async (req, res) => {
+app.post('/api/scores', async (req, res) => {
     const { name, userAnswers } = req.body;
     
     // Fast validation
@@ -416,7 +267,9 @@ app.post('/api/scores', rateLimiter, async (req, res) => {
 });
 
 // API: Get high scores (with fresh data from file if needed)
-app.get('/api/scores', rateLimiter, (req, res) => {
+app.get('/api/scores', (req, res) => {
+    console.log('🏆 GET /api/scores called');
+    
     // Return top 10 scores for the leaderboard
     const topScores = highScores.slice(0, 10).map(score => ({
         name: score.name,
@@ -424,6 +277,7 @@ app.get('/api/scores', rateLimiter, (req, res) => {
         date: score.dateString || new Date(score.date).toISOString().split('T')[0]
     }));
     
+    console.log(`✅ Returning ${topScores.length} high scores`);
     res.status(200).json(topScores);
 });
 
