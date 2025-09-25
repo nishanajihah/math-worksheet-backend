@@ -92,42 +92,49 @@ const VALID_ORIGINS = [
     'https://math-worksheet-react.vercel.app'
 ];
 
-// Simplified frontend validation (less aggressive for debugging)
+// Frontend validation - allow your specific frontend domain
 const validateFrontendRequest = (req, res, next) => {
-    console.log(`🔍 Request: ${req.method} ${req.path} from ${req.get('Origin') || 'no-origin'}`);
+    const origin = req.get('Origin');
+    console.log(`🔍 Request: ${req.method} ${req.path} from ${origin || 'direct'}`);
     
-    // Health check bypass (minimal processing)
+    // Always allow health check
     if (req.path === '/health') {
-        return res.status(200).end('OK');
+        return next();
     }
 
-    // Allow debug endpoint for troubleshooting
+    // Always allow debug endpoint
     if (req.path === '/debug') {
         return next();
     }
 
-    // Allow API paths to proceed
+    // Allow all API calls from your frontend
     if (req.path.startsWith('/api/')) {
+        console.log(`✅ API request allowed: ${req.path}`);
         return next();
     }
 
-    // Block everything else
-    return res.status(404).json({ error: 'Path not found', path: req.path });
-
+    // Block everything else with clear message
+    console.log(`❌ Blocked path: ${req.path}`);
+    return res.status(404).json({ error: 'Not Found - API endpoints available at /api/*' });
 };
 
-// Enhanced middleware setup with better CORS
-app.use(express.json({ limit: '1mb' }));
-
-// Very permissive CORS for debugging
+// Setup CORS FIRST - specifically allow your frontend
 app.use(cors({
-    origin: true, // Allow all origins for now
+    origin: [
+        'https://math-worksheet-vue.vercel.app',
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://localhost:8080'
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'X-Requested-With', 'Authorization']
 }));
 
-// Apply frontend validation to all routes
+// Setup JSON parsing
+app.use(express.json({ limit: '1mb' }));
+
+// Apply frontend validation AFTER CORS
 app.use(validateFrontendRequest);
 
 // Temporarily disabled IP limiting for debugging
