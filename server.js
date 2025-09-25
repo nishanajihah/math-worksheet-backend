@@ -46,6 +46,10 @@ let dailyStats = {
     limit: 100
 };
 
+// IP tracking for aggressive bot protection
+const ipRequestCounts = new Map();
+const bannedIPs = new Set();
+
 // Load scores from file
 const loadScores = () => {
     try {
@@ -119,10 +123,64 @@ app.use(cors({
 // JSON parsing
 app.use(express.json({ limit: '1mb' }));
 
-// Request logging and validation
+// Request logging and aggressive bot protection
 app.use((req, res, next) => {
     const origin = req.get('Origin');
-    console.log(`🔍 ${req.method} ${req.path} from ${origin || 'direct'}`);
+    const userAgent = req.get('User-Agent') || '';
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    
+    // Check if IP is banned
+    if (bannedIPs.has(ip)) {
+        return res.status(429).end('IP banned');
+    }
+    
+    // Track IP requests for rate limiting
+    if (!ipRequestCounts.has(ip)) {
+        ipRequestCounts.set(ip, { count: 0, lastReset: Date.now() });
+    }
+    
+    const ipData = ipRequestCounts.get(ip);
+    const now = Date.now();
+    
+    // Reset count every minute
+    if (now - ipData.lastReset > 60000) {
+        ipData.count = 0;
+        ipData.lastReset = now;
+    }
+    
+    ipData.count++;
+    
+    // Ban IPs with more than 10 requests per minute
+    if (ipData.count > 10) {
+        bannedIPs.add(ip);
+        console.log(`🚫 IP banned for excessive requests: ${ip}`);
+        return res.status(429).end('Rate limit exceeded');
+    }
+    
+    // Block suspicious bots and monitoring services immediately
+    const suspiciousBots = [
+        /bot/i, /crawler/i, /spider/i, /scraper/i,
+        /monitor/i, /uptime/i, /check/i, /test/i,
+        /curl/i, /wget/i, /python/i, /java/i,
+        /pingdom/i, /newrelic/i, /datadog/i,
+        /headless/i, /phantom/i, /selenium/i
+    ];
+    
+    if (suspiciousBots.some(pattern => pattern.test(userAgent))) {
+        console.log(`🤖 Blocked bot: ${userAgent.substring(0, 50)} from ${ip}`);
+        return res.status(429).end('Bot blocked');
+    }
+    
+    // Block requests without proper origin (except health checks)
+    if (req.path !== '/health' && !origin && req.path !== '/') {
+        console.log(`❌ Blocked direct request: ${req.path} from ${ip}`);
+        return res.status(403).end('Origin required');
+    }
+    
+    // Only log legitimate requests to reduce noise
+    if (origin || req.path === '/health') {
+        console.log(`🔍 ${req.method} ${req.path} from ${origin || 'direct'}`);
+    }
     
     // Allow specific paths
     if (req.path === '/health' || req.path === '/debug' || req.path === '/' || req.path.startsWith('/api/')) {
@@ -152,6 +210,21 @@ const checkDailyReset = () => {
     return false;
 };
 
+// Cleanup old IP data every hour to prevent memory leaks
+setInterval(() => {
+    const oneHourAgo = Date.now() - 3600000;
+    for (const [ip, data] of ipRequestCounts.entries()) {
+        if (data.lastReset < oneHourAgo) {
+            ipRequestCounts.delete(ip);
+        }
+    }
+    // Clear banned IPs every 24 hours
+    if (Math.random() < 0.1) { // 10% chance every hour = roughly daily
+        bannedIPs.clear();
+        console.log('🧹 Cleared banned IPs');
+    }
+}, 3600000); // Run every hour
+
 // =============================================================================
 // API ROUTES
 // =============================================================================
@@ -174,7 +247,7 @@ app.get('/', (req, res) => {
     });
 });
 
-// Health check
+// Ultra-minimal health check (no logging to reduce invocations)
 app.get('/health', (req, res) => {
     res.status(200).end('OK');
 });
