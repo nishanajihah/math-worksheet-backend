@@ -1,3 +1,7 @@
+// =============================================================================
+// MATH WORKSHEET BACKEND API
+// =============================================================================
+
 const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
@@ -6,64 +10,15 @@ const path = require("path");
 const app = express();
 const port = process.env.PORT || 3000;
 
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
+
 // File paths for persistent storage
 const SCORES_FILE = path.join(__dirname, 'scores.json');
 const STATS_FILE = path.join(__dirname, 'stats.json');
 
-// Load scores from file or initialize empty array
-let highScores = [];
-try {
-    if (fs.existsSync(SCORES_FILE)) {
-        const data = fs.readFileSync(SCORES_FILE, 'utf8');
-        highScores = JSON.parse(data) || [];
-        console.log(`📚 Loaded ${highScores.length} saved scores`);
-    }
-} catch (error) {
-    console.log('🆕 No existing scores file, starting fresh');
-    highScores = [];
-}
-
-// Load daily stats from file or initialize
-let dailyStats = {
-    requests: 0,
-    lastReset: new Date().toDateString(),
-    limit: 100
-};
-try {
-    if (fs.existsSync(STATS_FILE)) {
-        const data = fs.readFileSync(STATS_FILE, 'utf8');
-        dailyStats = { ...dailyStats, ...JSON.parse(data) };
-    }
-} catch (error) {
-    console.log('🆕 No existing stats file, starting fresh');
-}
-
-// Function to save scores to file (with error handling)
-const saveScores = async () => {
-    try {
-        await fs.promises.writeFile(SCORES_FILE, JSON.stringify(highScores, null, 2));
-        console.log(`💾 Saved ${highScores.length} scores to file`);
-        return true;
-    } catch (error) {
-        console.error('❌ Failed to save scores:', error.message);
-        return false;
-    }
-};
-
-// Function to save stats to file
-const saveStats = async () => {
-    try {
-        await fs.promises.writeFile(STATS_FILE, JSON.stringify(dailyStats, null, 2));
-        return true;
-    } catch (error) {
-        console.error('❌ Failed to save stats:', error.message);
-        return false;
-    }
-};
-
-
-
-// Questions data
+// Questions and answers data
 const questionsAndAnswers = [
     { id: 'q1', question: '17', correctAnswer: '20', choices: ['10', '20', '17'] },
     { id: 'q2', question: '75', correctAnswer: '80', choices: ['70', '80', '75'] },
@@ -79,14 +34,74 @@ const questionsAndAnswers = [
     { id: 'q12', question: '999', correctAnswer: '1000', choices: ['990', '1000', '909'] }
 ];
 
-// Pre-computed frontend questions (avoid processing on each request)
-const frontendQuestions = questionsAndAnswers.map(qa => ({
-    id: qa.id,
-    question: qa.question,
-    choices: qa.choices
-}));
+// =============================================================================
+// DATA STORAGE
+// =============================================================================
 
-// Note: CORS origins are configured below in app.use(cors({...}))
+// In-memory storage
+let highScores = [];
+let dailyStats = {
+    requests: 0,
+    lastReset: new Date().toDateString(),
+    limit: 100
+};
+
+// Load scores from file
+const loadScores = () => {
+    try {
+        if (fs.existsSync(SCORES_FILE)) {
+            const data = fs.readFileSync(SCORES_FILE, 'utf8');
+            highScores = JSON.parse(data) || [];
+            console.log(`📚 Loaded ${highScores.length} saved scores`);
+        }
+    } catch (error) {
+        console.log('🆕 No existing scores file, starting fresh');
+        highScores = [];
+    }
+};
+
+// Load stats from file
+const loadStats = () => {
+    try {
+        if (fs.existsSync(STATS_FILE)) {
+            const data = fs.readFileSync(STATS_FILE, 'utf8');
+            dailyStats = { ...dailyStats, ...JSON.parse(data) };
+        }
+    } catch (error) {
+        console.log('🆕 No existing stats file, starting fresh');
+    }
+};
+
+// Save scores to file
+const saveScores = async () => {
+    try {
+        await fs.promises.writeFile(SCORES_FILE, JSON.stringify(highScores, null, 2));
+        console.log(`💾 Saved ${highScores.length} scores to file`);
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to save scores:', error.message);
+        return false;
+    }
+};
+
+// Save stats to file
+const saveStats = async () => {
+    try {
+        await fs.promises.writeFile(STATS_FILE, JSON.stringify(dailyStats, null, 2));
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to save stats:', error.message);
+        return false;
+    }
+};
+
+// Initialize data on startup
+loadScores();
+loadStats();
+
+// =============================================================================
+// MIDDLEWARE CONFIGURATION
+// =============================================================================
 
 // Frontend validation - allow your specific frontend domain
 const validateFrontendRequest = (req, res, next) => {
