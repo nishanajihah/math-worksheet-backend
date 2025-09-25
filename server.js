@@ -86,11 +86,8 @@ const frontendQuestions = questionsAndAnswers.map(qa => ({
     choices: qa.choices
 }));
 
-// Valid frontend origins (for strict validation)
+// Valid frontend origins (production only)
 const VALID_ORIGINS = [
-    'http://localhost:3000',
-    'http://localhost:5173', 
-    'http://localhost:8080',
     'https://math-worksheet-vue.vercel.app',
     'https://math-worksheet-react.vercel.app'
 ];
@@ -102,7 +99,12 @@ const validateFrontendRequest = (req, res, next) => {
         return res.status(200).end('OK');
     }
 
-    // Block ALL non-API paths immediately (no processing)
+    // Allow debug endpoint for troubleshooting
+    if (req.path === '/debug') {
+        return next();
+    }
+
+    // Block ALL other non-API paths immediately (no processing)
     if (!req.path.startsWith('/api/')) {
         return res.status(404).end();
     }
@@ -142,18 +144,12 @@ const validateFrontendRequest = (req, res, next) => {
         return res.status(403).end();
     }
 
-    // STRICT origin validation - MUST be from your frontend
+    // STRICT origin validation - MUST be from your specific frontend domains
     const hasValidOrigin = origin && VALID_ORIGINS.some(validOrigin => 
         origin.startsWith(validOrigin)
     );
     
-    // Temporary: Allow any vercel.app domain for testing
-    const isVercelDomain = origin && origin.includes('.vercel.app');
-    
-    // Temporary: Allow localhost for local development
-    const isLocalhost = origin && (origin.includes('localhost') || origin.includes('127.0.0.1'));
-    
-    if (!hasValidOrigin && !isVercelDomain && !isLocalhost) {
+    if (!hasValidOrigin) {
         console.log(`🚫 Blocked origin: ${origin}`); // Debug logging
         return res.status(403).end();
     }
@@ -179,12 +175,33 @@ const validateFrontendRequest = (req, res, next) => {
     next();
 };
 
-// Minimal middleware setup
-app.use(express.json({ limit: '1mb' })); // Reduced limit
+// Enhanced middleware setup with better CORS
+app.use(express.json({ limit: '1mb' }));
+
+// Production CORS configuration (strict)
 app.use(cors({
-    origin: VALID_ORIGINS,
+    origin: function (origin, callback) {
+        // Allow requests with no origin (mobile apps, etc.)
+        if (!origin) return callback(null, true);
+        
+        // Check if origin is in VALID_ORIGINS
+        const isValidOrigin = VALID_ORIGINS.some(validOrigin => 
+            origin.startsWith(validOrigin)
+        );
+        
+        // For production: Only allow specifically listed Vercel domains
+        if (isValidOrigin) {
+            console.log(`✅ CORS ALLOWED: ${origin}`);
+            return callback(null, true);
+        }
+        
+        console.log(`🚫 CORS BLOCKED: ${origin}`);
+        return callback(null, false);
+    },
     credentials: true,
-    maxAge: 3600
+    maxAge: 3600,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'X-Requested-With']
 }));
 
 // Apply frontend validation to all routes
@@ -279,6 +296,25 @@ const rateLimiter = (req, res, next) => {
 // Optimized health check (minimal response)
 app.get('/health', (req, res) => {
     res.status(200).end('OK');
+});
+
+// Debug endpoint to check CORS and origin validation
+app.get('/debug', (req, res) => {
+    const origin = req.get('Origin') || req.get('Referer') || 'none';
+    const userAgent = req.get('User-Agent') || 'none';
+    
+    res.json({
+        message: 'Debug info',
+        origin: origin,
+        userAgent: userAgent.substring(0, 100),
+        timestamp: new Date().toISOString(),
+        headers: {
+            origin: req.get('Origin'),
+            referer: req.get('Referer'),
+            accept: req.get('Accept'),
+            contentType: req.get('Content-Type')
+        }
+    });
 });
 
 // Block ALL non-API paths immediately (handled in validateFrontendRequest now)
