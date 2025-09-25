@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = pr    console.log(`✅ ALLOWED - Origin: "${origin}"`);cess.env.PORT || 3000;
 
 // File paths for persistent storage
 const SCORES_FILE = path.join(__dirname, 'scores.json');
@@ -144,32 +144,54 @@ const validateFrontendRequest = (req, res, next) => {
         return res.status(403).end();
     }
 
-    // STRICT origin validation - MUST be from your specific frontend domains
+    // Enhanced origin validation with better debugging
     const hasValidOrigin = origin && VALID_ORIGINS.some(validOrigin => 
         origin.startsWith(validOrigin)
     );
     
-    if (!hasValidOrigin) {
-        console.log(`🚫 Blocked origin: ${origin}`); // Debug logging
-        return res.status(403).end();
+    // Temporary: Allow any .vercel.app domain while debugging
+    const isVercelApp = origin && origin.includes('.vercel.app');
+    
+    // Log all requests for debugging
+    console.log(`🔍 API Request - Origin: "${origin}", Path: ${req.path}, Method: ${req.method}`);
+    
+    if (!hasValidOrigin && !isVercelApp) {
+        console.log(`🚫 BLOCKED - Origin: "${origin}" not in allowed list`);
+        console.log(`📋 Allowed origins:`, VALID_ORIGINS);
+        return res.status(403).json({ 
+            error: 'Origin not allowed',
+            origin: origin,
+            allowedOrigins: VALID_ORIGINS
+        });
     }
+    
+    console.log(`✅ ALLOWED - Origin: "${origin}"`);
 
-    // API-specific validation
+    // API-specific validation (relaxed for debugging)
     if (req.path === '/api/questions') {
         // Must be GET and accept JSON
-        if (req.method !== 'GET' || !acceptHeader.includes('application/json')) {
-            return res.status(403).end();
+        if (req.method !== 'GET') {
+            console.log(`🚫 BLOCKED /api/questions - Wrong method: ${req.method}`);
+            return res.status(405).json({ error: 'Method not allowed', expected: 'GET' });
         }
     } else if (req.path === '/api/scores') {
-        // Must be POST with JSON content
-        if (req.method !== 'POST' || 
-            !contentType.includes('application/json') ||
-            !acceptHeader.includes('application/json')) {
-            return res.status(403).end();
+        // Allow both GET (fetch scores) and POST (submit score)
+        if (req.method === 'GET') {
+            console.log(`✅ GET /api/scores - Fetching high scores`);
+        } else if (req.method === 'POST') {
+            if (!contentType.includes('application/json')) {
+                console.log(`🚫 BLOCKED POST /api/scores - Wrong content type: ${contentType}`);
+                return res.status(400).json({ error: 'Content-Type must be application/json' });
+            }
+            console.log(`✅ POST /api/scores - Submitting score`);
+        } else {
+            console.log(`🚫 BLOCKED /api/scores - Wrong method: ${req.method}`);
+            return res.status(405).json({ error: 'Method not allowed', expected: 'GET or POST' });
         }
     } else {
         // Block any other API paths
-        return res.status(404).end();
+        console.log(`🚫 BLOCKED - Unknown API path: ${req.path}`);
+        return res.status(404).json({ error: 'API endpoint not found' });
     }
 
     next();
@@ -178,24 +200,32 @@ const validateFrontendRequest = (req, res, next) => {
 // Enhanced middleware setup with better CORS
 app.use(express.json({ limit: '1mb' }));
 
-// Production CORS configuration (strict)
+// Debugging CORS configuration (temporarily relaxed)
 app.use(cors({
     origin: function (origin, callback) {
+        console.log(`🔍 CORS Check - Origin: "${origin}"`);
+        
         // Allow requests with no origin (mobile apps, etc.)
-        if (!origin) return callback(null, true);
+        if (!origin) {
+            console.log(`✅ CORS ALLOWED: No origin (mobile/app request)`);
+            return callback(null, true);
+        }
         
         // Check if origin is in VALID_ORIGINS
         const isValidOrigin = VALID_ORIGINS.some(validOrigin => 
             origin.startsWith(validOrigin)
         );
         
-        // For production: Only allow specifically listed Vercel domains
-        if (isValidOrigin) {
+        // Temporarily allow any Vercel app for debugging
+        const isVercelApp = origin.includes('.vercel.app');
+        
+        if (isValidOrigin || isVercelApp) {
             console.log(`✅ CORS ALLOWED: ${origin}`);
             return callback(null, true);
         }
         
         console.log(`🚫 CORS BLOCKED: ${origin}`);
+        console.log(`📋 Valid origins:`, VALID_ORIGINS);
         return callback(null, false);
     },
     credentials: true,
