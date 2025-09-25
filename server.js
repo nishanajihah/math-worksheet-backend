@@ -122,6 +122,7 @@ const validateFrontendRequest = (req, res, next) => {
 app.use(cors({
     origin: [
         'https://math-worksheet-vue.vercel.app',
+        'https://math-worksheet-backend.vercel.app',
         'http://localhost:3000',
         'http://localhost:5173',
         'http://localhost:8080'
