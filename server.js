@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
-const port = pr    console.log(`✅ ALLOWED - Origin: "${origin}"`);cess.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
 // File paths for persistent storage
 const SCORES_FILE = path.join(__dirname, 'scores.json');
