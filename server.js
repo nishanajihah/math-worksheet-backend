@@ -86,11 +86,7 @@ const frontendQuestions = questionsAndAnswers.map(qa => ({
     choices: qa.choices
 }));
 
-// Valid frontend origins (production only)
-const VALID_ORIGINS = [
-    'https://math-worksheet-vue.vercel.app',
-    'https://math-worksheet-react.vercel.app'
-];
+// Note: CORS origins are configured below in app.use(cors({...}))
 
 // Frontend validation - allow your specific frontend domain
 const validateFrontendRequest = (req, res, next) => {
@@ -104,6 +100,11 @@ const validateFrontendRequest = (req, res, next) => {
 
     // Always allow debug endpoint
     if (req.path === '/debug') {
+        return next();
+    }
+
+    // Allow root path to show API info
+    if (req.path === '/') {
         return next();
     }
 
@@ -122,7 +123,6 @@ const validateFrontendRequest = (req, res, next) => {
 app.use(cors({
     origin: [
         'https://math-worksheet-vue.vercel.app',
-        'https://math-worksheet-backend.vercel.app',
         'http://localhost:3000',
         'http://localhost:5173',
         'http://localhost:8080'
@@ -178,6 +178,24 @@ const rateLimiter = (req, res, next) => {
     dailyStats.requests++;
     next();
 };
+
+// Root endpoint - show available API endpoints
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Math Worksheet Backend API',
+        endpoints: {
+            '/health': 'Health check',
+            '/api/questions': 'Get math questions data',
+            '/api/scores': {
+                'GET': 'Get high scores leaderboard',
+                'POST': 'Submit new score'
+            },
+            '/api/stats': 'Get API usage statistics'
+        },
+        version: '1.0.0',
+        status: 'active'
+    });
+});
 
 // Optimized health check (minimal response)
 app.get('/health', (req, res) => {
