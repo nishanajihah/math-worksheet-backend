@@ -103,38 +103,7 @@ loadStats();
 // MIDDLEWARE CONFIGURATION
 // =============================================================================
 
-// Frontend validation - allow your specific frontend domain
-const validateFrontendRequest = (req, res, next) => {
-    const origin = req.get('Origin');
-    console.log(`🔍 Request: ${req.method} ${req.path} from ${origin || 'direct'}`);
-    
-    // Always allow health check
-    if (req.path === '/health') {
-        return next();
-    }
-
-    // Always allow debug endpoint
-    if (req.path === '/debug') {
-        return next();
-    }
-
-    // Allow root path to show API info
-    if (req.path === '/') {
-        return next();
-    }
-
-    // Allow all API calls from your frontend
-    if (req.path.startsWith('/api/')) {
-        console.log(`✅ API request allowed: ${req.path}`);
-        return next();
-    }
-
-    // Block everything else with clear message
-    console.log(`❌ Blocked path: ${req.path}`);
-    return res.status(404).json({ error: 'Not Found - API endpoints available at /api/*' });
-};
-
-// Setup CORS FIRST - specifically allow your frontend
+// CORS - Allow frontend domains
 app.use(cors({
     origin: [
         'https://math-worksheet-vue.vercel.app',
@@ -147,54 +116,47 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'X-Requested-With', 'Authorization']
 }));
 
-// Setup JSON parsing
+// JSON parsing
 app.use(express.json({ limit: '1mb' }));
 
-// Apply frontend validation AFTER CORS
-app.use(validateFrontendRequest);
+// Request logging and validation
+app.use((req, res, next) => {
+    const origin = req.get('Origin');
+    console.log(`🔍 ${req.method} ${req.path} from ${origin || 'direct'}`);
+    
+    // Allow specific paths
+    if (req.path === '/health' || req.path === '/debug' || req.path === '/' || req.path.startsWith('/api/')) {
+        return next();
+    }
+    
+    // Block everything else
+    console.log(`❌ Blocked path: ${req.path}`);
+    return res.status(404).json({ error: 'Not Found - API endpoints available at /api/*' });
+});
 
-// Temporarily disabled IP limiting for debugging
-// const ipLimiter = ... (commented out)
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
 
-// Simple daily reset with persistent storage
+// Check and reset daily stats
 const checkDailyReset = () => {
     const today = new Date().toDateString();
     if (dailyStats.lastReset !== today) {
         dailyStats.requests = 0;
         dailyStats.lastReset = today;
-        
-        // Save updated stats to file
         saveStats().catch(error => {
             console.error('Failed to save stats after daily reset:', error);
         });
-        
         return true;
     }
     return false;
 };
 
-// Simplified rate limiting (prevent infinite loops)
-const rateLimiter = (req, res, next) => {
-    // Skip rate limiting for health checks to prevent Vercel issues
-    if (req.path === '/health') {
-        return next();
-    }
-    
-    checkDailyReset();
-    
-    // Simple daily limit check
-    if (dailyStats.requests >= dailyStats.limit) {
-        return res.status(429).json({ 
-            error: 'Daily limit reached',
-            reset: 'Midnight UTC'
-        });
-    }
-    
-    dailyStats.requests++;
-    next();
-};
+// =============================================================================
+// API ROUTES
+// =============================================================================
 
-// Root endpoint - show available API endpoints
+// Root endpoint - API documentation
 app.get('/', (req, res) => {
     res.json({
         message: 'Math Worksheet Backend API',
@@ -212,12 +174,12 @@ app.get('/', (req, res) => {
     });
 });
 
-// Optimized health check (minimal response)
+// Health check
 app.get('/health', (req, res) => {
     res.status(200).end('OK');
 });
 
-// Debug endpoint to check CORS and origin validation
+// Debug endpoint
 app.get('/debug', (req, res) => {
     const origin = req.get('Origin') || req.get('Referer') || 'none';
     const userAgent = req.get('User-Agent') || 'none';
@@ -236,10 +198,7 @@ app.get('/debug', (req, res) => {
     });
 });
 
-// Block ALL non-API paths immediately (handled in validateFrontendRequest now)
-// This is now redundant since validateFrontendRequest blocks everything except /health and /api/*
-
-// Stats endpoint (no rate limiting)
+// Get API usage statistics
 app.get('/api/stats', (req, res) => {
     console.log('📊 GET /api/stats called');
     res.status(200).json({
@@ -249,11 +208,10 @@ app.get('/api/stats', (req, res) => {
     });
 });
 
-// API: Get questions (simplified)
+// Get math questions
 app.get('/api/questions', (req, res) => {
     console.log('📚 GET /api/questions - Request received');
     console.log('📍 Origin:', req.get('Origin') || 'none');
-    console.log('📍 User-Agent:', req.get('User-Agent')?.substring(0, 50) || 'none');
     
     try {
         const questionsForFrontend = questionsAndAnswers.map(qa => ({
@@ -270,63 +228,65 @@ app.get('/api/questions', (req, res) => {
     }
 });
 
-// API: Submit score (with persistent storage)
+// Submit new score
 app.post('/api/scores', async (req, res) => {
     console.log('📝 POST /api/scores - Request received');
     console.log('Origin:', req.get('Origin'));
-    console.log('User-Agent:', req.get('User-Agent'));
     
     const { name, userAnswers } = req.body;
     
-    // Fast validation
+    // Validation
     if (!name || !userAnswers) {
         console.log('❌ Validation failed: missing name or userAnswers');
         return res.status(400).json({ error: 'Name and answers required' });
     }
     
-    // Calculate score using your questionsAndAnswers array
-    let score = 0;
-    questionsAndAnswers.forEach(qa => {
-        if (userAnswers[qa.id] === qa.correctAnswer) {
-            score++;
-        }
-    });
-    
-    // Create new score entry with more details
-    const newScore = {
-        name: name.substring(0, 20),
-        score,
-        date: Date.now(),
-        dateString: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
-        timestamp: new Date().toLocaleString()
-    };
-    
-    // Add to scores and maintain leaderboard
-    highScores.push(newScore);
-    highScores.sort((a, b) => b.score - a.score); // Sort by highest score first
-    highScores = highScores.slice(0, 50); // Keep top 50 scores (increased from 10)
-    
-    // Save to file immediately (async to not block response)
-    saveScores().catch(error => {
-        console.error('Failed to save scores after new submission:', error);
-    });
-    
-    res.status(200).json({
-        score,
-        message: `Score: ${score}/12`,
-        highScores: highScores.slice(0, 10), // Show top 10 to frontend
-        saved: true
-    });
+    try {
+        // Calculate score
+        let score = 0;
+        questionsAndAnswers.forEach(qa => {
+            if (userAnswers[qa.id] === qa.correctAnswer) {
+                score++;
+            }
+        });
+        
+        // Create score entry
+        const newScore = {
+            name: name.substring(0, 20),
+            score,
+            date: Date.now(),
+            dateString: new Date().toISOString().split('T')[0],
+            timestamp: new Date().toLocaleString()
+        };
+        
+        // Add to leaderboard
+        highScores.push(newScore);
+        highScores.sort((a, b) => b.score - a.score);
+        highScores = highScores.slice(0, 50); // Keep top 50
+        
+        // Save asynchronously
+        saveScores().catch(error => {
+            console.error('Failed to save scores:', error);
+        });
+        
+        console.log(`✅ Score ${score}/12 saved for ${name}`);
+        res.status(200).json({
+            score,
+            message: `Score: ${score}/12`,
+            highScores: highScores.slice(0, 10), // Return top 10
+            saved: true
+        });
+    } catch (error) {
+        console.error('❌ Error in POST /api/scores:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
-// API: Get high scores (with fresh data from file if needed)
+// Get high scores leaderboard
 app.get('/api/scores', (req, res) => {
     console.log('🏆 GET /api/scores called');
-    console.log('Origin:', req.get('Origin'));
-    console.log('User-Agent:', req.get('User-Agent'));
     
     try {
-        // Return top 10 scores for the leaderboard
         const topScores = highScores.slice(0, 10).map(score => ({
             name: score.name,
             score: score.score,
@@ -341,7 +301,11 @@ app.get('/api/scores', (req, res) => {
     }
 });
 
-// Start server
+// =============================================================================
+// SERVER STARTUP
+// =============================================================================
+
 app.listen(port, () => {
-    console.log(`Math Worksheet Backend listening at http://localhost:${port}`);
+    console.log(`🚀 Math Worksheet Backend API running on port ${port}`);
+    console.log(`📊 Loaded ${highScores.length} scores, ${dailyStats.requests} requests today`);
 });
